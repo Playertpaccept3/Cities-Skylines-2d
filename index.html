@@ -1,0 +1,1282 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>City Skylines 2D - Pro Edition</title>
+    <style>
+        :root {
+            --bg: #020617;
+            --panel: rgba(15, 23, 42, 0.95);
+            --border: rgba(255, 255, 255, 0.15);
+            --accent: #0ea5e9;
+            --text: #f8fafc;
+            --text-dim: #94a3b8;
+            --res: #22c55e;
+            --com: #3b82f6;
+            --ind: #eab308;
+            --danger: #f43f5e;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', -apple-system, sans-serif;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        #game-container { position: relative; width: 100%; height: 100%; }
+        canvas { display: block; cursor: crosshair; }
+
+        #loading-screen {
+            position: fixed;
+            inset: 0;
+            background: var(--bg);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.5s;
+        }
+        #loading-screen.hidden { opacity: 0; pointer-events: none; }
+        .loader {
+            width: 48px;
+            height: 48px;
+            border: 5px solid var(--accent);
+            border-bottom-color: transparent;
+            border-radius: 50%;
+            animation: rotation 1s linear infinite;
+        }
+        @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .load-text { margin-top: 16px; color: var(--text); font-weight: 600; }
+        .toast-icon { font-size: 24px; }
+        .toast-content { flex: 1; }
+        .toast-title { font-weight: 800; font-size: 14px; margin-bottom: 2px; color: var(--accent); }
+        .toast-msg { font-size: 12px; opacity: 0.8; }
+
+        @keyframes toast-in {
+            from { opacity: 0; transform: translateY(-20px) scale(0.9); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes toast-out {
+            from { opacity: 1; transform: translateY(0) scale(1); }
+            to { opacity: 0; transform: translateY(-20px) scale(0.9); }
+        }
+
+        /* OVERLAYS */
+        #main-menu {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            opacity: 1;
+            transition: opacity 0.5s, visibility 0.5s;
+            overflow: hidden;
+        }
+        #main-menu.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+
+        .menu-background {
+            position: absolute;
+            inset: -10%;
+            background: url('/src/assets/images/menu_background_video_1785944683838.jpg') center/cover no-repeat;
+            animation: menu-bg-float 60s ease-in-out infinite alternate;
+            z-index: -2;
+        }
+        .menu-overlay {
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at center, rgba(15, 23, 42, 0.4) 0%, rgba(15, 23, 42, 0.9) 100%);
+            backdrop-filter: blur(8px);
+            z-index: -1;
+        }
+        @keyframes menu-bg-float {
+            0% { transform: scale(1.15) translate(-2%, -2%); }
+            50% { transform: scale(1.25) translate(2%, 2%); }
+            100% { transform: scale(1.15) translate(-2%, 2%); }
+        }
+        
+        .menu-title { font-size: 32px; font-weight: 800; margin-bottom: 8px; color: var(--accent); }
+        .menu-subtitle { font-size: 14px; color: var(--text-dim); margin-bottom: 32px; }
+        .menu-btn.primary { background: var(--accent); border-color: var(--accent); }
+        .menu-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            padding: 48px;
+            border-radius: 24px;
+            text-align: center;
+            box-shadow: 0 32px 64px rgba(0,0,0,0.5);
+            max-width: 450px;
+            width: 90%;
+            backdrop-filter: blur(20px);
+        }
+        .menu-btn {
+            width: 100%;
+            padding: 16px;
+            margin-bottom: 12px;
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            background: rgba(255,255,255,0.05);
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .menu-btn:hover { background: var(--accent); border-color: var(--accent); transform: translateY(-2px); }
+
+        /* INFO PANEL */
+        #info-panel {
+            position: absolute;
+            top: 80px; left: 24px;
+            width: 280px;
+            padding: 20px;
+            border-radius: 20px;
+            display: none;
+        }
+        .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }
+        .info-val { font-weight: 700; }
+
+        /* OVERLAY TOGGLES */
+        #view-controls {
+            position: absolute;
+            top: 80px; right: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .view-btn {
+            padding: 8px 12px;
+            border-radius: 10px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+            backdrop-filter: blur(8px);
+            transition: all 0.2s;
+        }
+        .view-btn.active { color: white; border-color: var(--accent); background: rgba(14, 165, 233, 0.2); }
+
+        /* UI PANELS */
+        .ui-panel {
+            position: absolute;
+            background: var(--panel);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border);
+            z-index: 10;
+        }
+
+        #top-bar {
+            top: 0; left: 0; right: 0; height: 60px;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 24px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        }
+
+        .stats-group { display: flex; gap: 32px; align-items: center; }
+        .stat-item { display: flex; flex-direction: column; }
+        .stat-label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; margin-bottom: 2px; }
+        .stat-value { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
+        .money { color: #10b981; }
+        .pop { color: var(--accent); }
+
+        #toolbar {
+            bottom: 24px; left: 50%; transform: translateX(-50%);
+            padding: 12px; border-radius: 20px;
+            display: flex; gap: 12px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+        }
+
+        .tool-btn {
+            width: 56px; height: 56px; border-radius: 14px;
+            border: 1px solid var(--border);
+            background: rgba(255,255,255,0.03);
+            color: var(--text);
+            cursor: pointer;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+
+        .tool-btn:hover { background: rgba(255,255,255,0.08); transform: translateY(-4px); }
+        .tool-btn.active {
+            background: var(--accent); color: white;
+            border-color: rgba(255,255,255,0.2);
+            box-shadow: 0 8px 24px rgba(14, 165, 233, 0.4);
+        }
+
+        .tool-icon { font-size: 20px; margin-bottom: 2px; }
+        .tool-label { font-size: 9px; font-weight: 800; text-transform: uppercase; }
+        .tool-btn .cost {
+            position: absolute; top: -18px; left: 50%; transform: translateX(-50%);
+            background: #064e3b; padding: 2px 8px; border-radius: 6px;
+            font-size: 10px; color: #34d399; font-weight: 800;
+            opacity: 0; transition: opacity 0.2s; pointer-events: none;
+            border: 1px solid rgba(52, 211, 153, 0.2);
+        }
+        .tool-btn:hover .cost { opacity: 1; }
+
+        #rci-container {
+            display: flex; gap: 4px; height: 32px; align-items: flex-end;
+            background: rgba(0,0,0,0.4); padding: 4px; border-radius: 6px;
+        }
+        .rci-bar { width: 10px; border-radius: 2px; transition: height 0.3s ease; }
+        .rci-res { background: var(--res); }
+        .rci-com { background: var(--com); }
+        .rci-ind { background: var(--ind); }
+
+        #time-controls { display: flex; gap: 8px; align-items: center; }
+        .time-btn {
+            background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+            color: var(--text-dim); width: 32px; height: 32px; border-radius: 8px;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s;
+        }
+        .time-btn:hover { color: var(--text); background: rgba(255,255,255,0.1); }
+        .time-btn.active { color: white; background: var(--accent); border-color: var(--accent); }
+    </style>
+</head>
+<body>
+
+    <!-- AUDIO -->
+    <audio id="bgm" src="/assets/bgm.mp3" loop></audio>
+    <audio id="sfx-click" src="/assets/click.mp3"></audio>
+    <audio id="sfx-build" src="/assets/build.mp3"></audio>
+
+    <div id="loading-screen">
+        <div class="loader"></div>
+        <div class="load-text">Загрузка мира...</div>
+    </div>
+
+<div id="game-container">
+    <div id="top-bar" class="ui-panel">
+        <div class="stats-group">
+            <button onclick="game.toggleMenu()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: white;">☰</button>
+            <div class="stat-item">
+                <span id="city-name" class="stat-value">Neo Skylines</span>
+                <span id="game-date" class="stat-label">Январь 2026</span>
+            </div>
+        </div>
+
+        <div class="stats-group">
+            <div class="stat-item" onclick="game.toggleInfo()" style="cursor:pointer">
+                <span class="stat-label">Бюджет</span>
+                <span id="money-display" class="stat-value money">$50,000</span>
+            </div>
+            <div class="stat-item" onclick="game.toggleInfo()" style="cursor:pointer">
+                <span class="stat-label">Население</span>
+                <span id="pop-display" class="stat-value pop">0</span>
+            </div>
+            <div class="stat-item" onclick="game.toggleInfo()" style="cursor:pointer">
+                <span class="stat-label">Счастье</span>
+                <span id="happiness-display" class="stat-value">100%</span>
+            </div>
+        </div>
+
+        <div class="stats-group">
+            <div id="rci-container">
+                <div id="r-demand" class="rci-bar rci-res" style="height: 60%;"></div>
+                <div id="c-demand" class="rci-bar rci-com" style="height: 40%;"></div>
+                <div id="i-demand" class="rci-bar rci-ind" style="height: 30%;"></div>
+            </div>
+            <div id="time-controls">
+                <button class="time-btn" id="btn-pause" onclick="game.setSpeed(0)">⏸</button>
+                <button class="time-btn active" id="btn-play" onclick="game.setSpeed(1)">▶</button>
+                <button class="time-btn" id="btn-fast" onclick="game.setSpeed(2)">⏩</button>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="toast-container"></div>
+
+    <!-- INFO PANEL -->
+    <div id="info-panel" class="ui-panel">
+        <h3 style="margin-bottom: 15px; color: var(--accent);">Статистика города</h3>
+        <div class="info-row"><span>Здания:</span> <span class="info-val" id="total-buildings">0</span></div>
+        <div class="info-row"><span>Энергосеть:</span> <span class="info-val" id="power-status">Норма</span></div>
+        <div class="info-row"><span>Водоснабжение:</span> <span class="info-val" id="water-status">Норма</span></div>
+        <div class="info-row"><span>Загрязнение:</span> <span class="info-val" id="pollution-status">0.0</span></div>
+        <hr style="margin: 15px 0; opacity: 0.1;">
+        <div class="info-row"><span>Налоги:</span> <span class="info-val" id="tax-income">+$0</span></div>
+        <div class="info-row"><span>Расходы:</span> <span class="info-val" id="maintenance-costs">-$0</span></div>
+    </div>
+
+    <!-- VIEW CONTROLS -->
+    <div id="view-controls">
+        <button class="view-btn active" id="view-default" onclick="game.setView('default')">Вид: Город</button>
+        <button class="view-btn" id="view-power" onclick="game.setView('power')">Сетка: Энергия</button>
+        <button class="view-btn" id="view-water" onclick="game.setView('water')">Сетка: Вода</button>
+        <button class="view-btn" id="view-pollution" onclick="game.setView('pollution')">Слой: Экология</button>
+    </div>
+
+    <!-- MAIN MENU -->
+    <div id="main-menu">
+        <div class="menu-background"></div>
+        <div class="menu-overlay"></div>
+        <div class="menu-card">
+            <div class="menu-title">City Skylines</div>
+            <div class="menu-subtitle">Simulate your own world</div>
+            <button class="menu-btn primary" onclick="game.toggleMenu()" style="color: #fffafa;">Продолжить</button>
+            <button class="menu-btn" onclick="game.newGame()">Новый город</button>
+            <button class="menu-btn" onclick="game.saveCity()">Сохранить игру</button>
+            <button class="menu-btn" onclick="window.location.reload()">Перезагрузить</button>
+        </div>
+    </div>
+
+    <div id="toolbar" class="ui-panel">
+        <button class="tool-btn active" data-tool="select" onclick="game.setTool('select')">
+            <span class="tool-icon">🔍</span>
+            <span class="tool-label">Обзор</span>
+        </button>
+        <button class="tool-btn" data-tool="road" onclick="game.setTool('road')">
+            <span class="tool-icon">🛣️</span>
+            <span class="tool-label">Дорога</span>
+            <span class="cost">$20</span>
+        </button>
+        <button class="tool-btn" data-tool="lake" onclick="game.setTool('lake')">
+            <span class="tool-icon">🌊</span>
+            <span class="tool-label">Озеро</span>
+            <span class="cost">$100</span>
+        </button>
+        <button class="tool-btn" data-tool="res" onclick="game.setTool('res')">
+            <span class="tool-icon" style="color: var(--res)">🏠</span>
+            <span class="tool-label">Жилье</span>
+            <span class="cost">$5</span>
+        </button>
+        <button class="tool-btn" data-tool="com" onclick="game.setTool('com')">
+            <span class="tool-icon" style="color: var(--com)">🛒</span>
+            <span class="tool-label">Бизнес</span>
+            <span class="cost">$10</span>
+        </button>
+        <button class="tool-btn" data-tool="ind" onclick="game.setTool('ind')">
+            <span class="tool-icon" style="color: var(--ind)">🏭</span>
+            <span class="tool-label">Пром</span>
+            <span class="cost">$15</span>
+        </button>
+        <button class="tool-btn" data-tool="park" onclick="game.setTool('park')">
+            <span class="tool-icon" style="color: #4ade80">🌳</span>
+            <span class="tool-label">Парк</span>
+            <span class="cost">$50</span>
+        </button>
+        <button class="tool-btn" data-tool="power_plant" onclick="game.setTool('power_plant')">
+            <span class="tool-icon" style="color: #fbbf24">⚡</span>
+            <span class="tool-label">ТЭЦ</span>
+            <span class="cost">$500</span>
+        </button>
+        <button class="tool-btn" data-tool="water_pump" onclick="game.setTool('water_pump')">
+            <span class="tool-icon" style="color: #3b82f6">💧</span>
+            <span class="tool-label">Насос</span>
+            <span class="cost">$400</span>
+        </button>
+        <button class="tool-btn" data-tool="drain" onclick="game.setTool('drain')">
+            <span class="tool-icon" style="color: #3b82f6">🌀</span>
+            <span class="tool-label">Слив</span>
+            <span class="cost">$300</span>
+        </button>
+        <button class="tool-btn" data-tool="bulldoze" onclick="game.setTool('bulldoze')">
+            <span class="tool-icon" style="color: var(--danger)">🚜</span>
+            <span class="tool-label">Снос</span>
+            <span class="cost">$5</span>
+        </button>
+    </div>
+</div>
+
+<script>
+    const CONFIG = {
+        GRID_SIZE: 60,
+        TILE_SIZE: 48,
+        COLORS: {
+            GRASS: '#166534',
+            GRASS_LIGHT: '#14532d',
+            ROAD: '#334155',
+            ROAD_LINE: '#fde047',
+            RES: '#22c55e',
+            COM: '#3b82f6',
+            IND: '#eab308',
+            POWER: '#fbbf24',
+            PARK: '#4ade80',
+            WASTE: '#a855f7',
+            POLLUTION: 'rgba(120, 113, 108, 0.4)',
+            WATER: '#0369a1',
+            TREE: '#14532d',
+            CAR: ['#ef4444', '#3b82f6', '#f8fafc', '#1e293b', '#eab308']
+        }
+    };
+
+    class CityGame {
+        constructor() {
+            this.canvas = document.getElementById('gameCanvas');
+            this.ctx = this.canvas.getContext('2d');
+            this.grid = [];
+            this.funds = 50000;
+            this.population = 0;
+            this.happiness = 100;
+            this.date = { month: 0, year: 2026 };
+            this.demand = { r: 60, c: 40, i: 30 };
+            this.activeTool = 'select';
+            this.speed = 1;
+            this.camera = { x: 0, y: 0, zoom: 0.8 };
+            this.particles = [];
+            this.agents = []; // Vehicles and People
+            this.currentView = 'default';
+            this.isPaused = true; // Start paused with menu
+            this.showInfo = false;
+            this.lastEconomy = { tax: 0, maint: 0 };
+            this.achievements = {
+                pop100: false,
+                pop1000: false,
+                pop5000: false,
+                happy90: false,
+                pollutionHigh: false
+            };
+
+            // Texture Loading
+            this.textures = {};
+            this.texturesLoadedCount = 0;
+            const sources = {
+                grass: '/src/assets/images/grass_seamless_tile_1785944364304.jpg',
+                water: '/src/assets/images/water_seamless_tile_1785944380375.jpg',
+                road: '/src/assets/images/road_seamless_tile_1785944400345.jpg',
+                park: '/src/assets/images/park_transparent_tile_1785944477868.jpg',
+                res_1: '/src/assets/images/res_stage1_foundation_1785945357249.jpg',
+                res_2: '/src/assets/images/res_stage2_village_1785945372555.jpg',
+                res_3: '/src/assets/images/res_stage3_modern_1785945385903.jpg',
+                com_1: '/src/assets/images/com_stage1_foundation_1785945400292.jpg',
+                com_2: '/src/assets/images/com_stage2_small_shop_1785945413521.jpg',
+                com_3: '/src/assets/images/com_stage3_large_shop_1785945424559.jpg',
+                ind_1: '/src/assets/images/res_stage1_foundation_1785945357249.jpg', // Placeholder
+                ind_2: '/src/assets/images/res_stage1_foundation_1785945357249.jpg', // Placeholder
+                ind_3: '/src/assets/images/res_stage1_foundation_1785945357249.jpg', // Placeholder
+                power: '/src/assets/images/power_transparent_tile_1785944451818.jpg',
+                pump: '/src/assets/images/pump_transparent_tile_1785944464661.jpg',
+                waste: '/src/assets/images/utility_transparent_tile_1785944501237.jpg',
+                drain: '/src/assets/images/utility_transparent_tile_1785944501237.jpg',
+                tree: '/src/assets/images/tree_transparent_tile_1785944489341.jpg'
+            };
+            this.totalTextures = Object.keys(sources).length;
+            for (let k in sources) {
+                const img = new Image();
+                img.src = sources[k];
+                img.onload = () => {
+                    // For isolated images, process to remove white background
+                    this.textures[k] = img;
+                    this.texturesLoadedCount++;
+                    if (this.texturesLoadedCount === this.totalTextures) {
+                        document.getElementById('loading-screen').classList.add('hidden');
+                        this.playBGM();
+                    }
+                };
+            }
+
+            this.init();
+        }
+
+        showToast(title, msg, icon = '🏆') {
+            this.playSound('click');
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.innerHTML = `
+                <div class="toast-icon">${icon}</div>
+                <div class="toast-content">
+                    <div class="toast-title">${title}</div>
+                    <div class="toast-msg">${msg}</div>
+                </div>
+            `;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 5000);
+        }
+
+        drawFromAtlas(key, x, y, size) {
+            if (this.texturesLoadedCount < this.totalTextures) return false;
+            const img = this.textures[key];
+            if (!img) return false;
+            this.ctx.drawImage(img, x, y, size, size);
+            return true;
+        }
+
+        toggleMenu() {
+            this.isPaused = !this.isPaused;
+            document.getElementById('main-menu').classList.toggle('hidden', !this.isPaused);
+        }
+
+        playSound(id) {
+            const audio = document.getElementById('sfx-' + id);
+            if (audio) { audio.currentTime = 0; audio.play().catch(e => console.log('Audio restricted')); }
+        }
+
+        playBGM() {
+            const bgm = document.getElementById('bgm');
+            if (bgm) bgm.play().catch(e => console.log('BGM restricted'));
+        }
+
+        toggleInfo() {
+            this.showInfo = !this.showInfo;
+            document.getElementById('info-panel').style.display = this.showInfo ? 'block' : 'none';
+        }
+
+        setView(view) {
+            this.currentView = view;
+            document.querySelectorAll('.view-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`view-${view}`).classList.add('active');
+        }
+
+        newGame() {
+            if (confirm('Начать новый город? Весь прогресс будет потерян.')) {
+                localStorage.removeItem('city_save_pro');
+                window.location.reload();
+            }
+        }
+
+        init() {
+            const saved = localStorage.getItem('city_save_pro');
+            if (saved) {
+                try {
+                    const data = JSON.parse(saved);
+                    this.grid = data.grid;
+                    this.funds = data.funds;
+                    this.date = data.date || { month: 0, year: 2026 };
+                    if (data.achievements) this.achievements = data.achievements;
+                } catch(e) { this.generateGrid(); }
+            } else { this.generateGrid(); }
+
+            window.addEventListener('resize', () => this.resize());
+            this.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+            window.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+            window.addEventListener('mouseup', () => this.handleMouseUp());
+            this.canvas.addEventListener('wheel', (e) => this.handleWheel(e));
+            this.canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+            this.resize();
+            this.centerCamera();
+            this.startSimulation();
+            this.loop();
+            setInterval(() => this.save(), 10000);
+        }
+
+        save(showAlert = false) {
+            localStorage.setItem('city_save_pro', JSON.stringify({
+                grid: this.grid, funds: this.funds, date: this.date, achievements: this.achievements
+            }));
+            if (showAlert) alert('Игра сохранена!');
+        }
+
+        saveCity() {
+            this.save(true);
+        }
+
+        generateGrid() {
+            for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
+                let row = [];
+                for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
+                    const isWater = (Math.sin(x*0.1) + Math.cos(y*0.1)) > 1.5;
+                    row.push({
+                        type: isWater ? 'water' : 'grass',
+                        zone: null,
+                        level: 0,
+                        growth: 0,
+                        powered: false,
+                        watered: false,
+                        pollution: 0,
+                        seed: Math.random(),
+                        hasTree: !isWater && Math.random() < 0.1
+                    });
+                }
+                this.grid.push(row);
+            }
+        }
+
+        resize() {
+            this.canvas.width = window.innerWidth;
+            this.canvas.height = window.innerHeight;
+        }
+
+        centerCamera() {
+            this.camera.x = this.canvas.width / 2 - (CONFIG.GRID_SIZE * CONFIG.TILE_SIZE * this.camera.zoom) / 2;
+            this.camera.y = this.canvas.height / 2 - (CONFIG.GRID_SIZE * CONFIG.TILE_SIZE * this.camera.zoom) / 2;
+        }
+
+        setTool(t) {
+            this.activeTool = t;
+            document.querySelectorAll('.tool-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.tool === t);
+            });
+        }
+
+        togglePlay() {
+            if (this.speed === 0) this.setSpeed(1);
+            else this.setSpeed(0);
+        }
+
+        setSpeed(s) {
+            this.speed = s;
+            document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
+            if (s === 0) document.getElementById('btn-pause').classList.add('active');
+            if (s === 1) document.getElementById('btn-play').classList.add('active');
+            if (s === 2) document.getElementById('btn-fast').classList.add('active');
+        }
+
+        handleMouseDown(e) {
+            if (e.button === 2) { this.panning = true; } 
+            else { this.drawing = true; this.applyTool(e); }
+            this.lastMouse = { x: e.clientX, y: e.clientY };
+        }
+
+        handleMouseMove(e) {
+            if (this.panning) {
+                this.camera.x += e.clientX - this.lastMouse.x;
+                this.camera.y += e.clientY - this.lastMouse.y;
+            } else if (this.drawing) {
+                this.applyTool(e);
+            }
+            this.lastMouse = { x: e.clientX, y: e.clientY };
+        }
+
+        handleMouseUp() { this.panning = false; this.drawing = false; }
+
+        handleWheel(e) {
+            const factor = e.deltaY > 0 ? 0.9 : 1.1;
+            const newZoom = Math.max(0.2, Math.min(2.5, this.camera.zoom * factor));
+            this.camera.x = e.clientX - (e.clientX - this.camera.x) * (newZoom / this.camera.zoom);
+            this.camera.y = e.clientY - (e.clientY - this.camera.y) * (newZoom / this.camera.zoom);
+            this.camera.zoom = newZoom;
+        }
+
+        applyTool(e) {
+            this.playSound('click');
+            const wx = (e.clientX - this.camera.x) / this.camera.zoom;
+            const wy = (e.clientY - this.camera.y) / this.camera.zoom;
+            const gx = Math.floor(wx / CONFIG.TILE_SIZE);
+            const gy = Math.floor(wy / CONFIG.TILE_SIZE);
+
+            if (gx >= 0 && gx < CONFIG.GRID_SIZE && gy >= 0 && gy < CONFIG.GRID_SIZE) {
+                const t = this.grid[gy][gx];
+                const costs = { road: 20, lake: 100, res: 5, com: 10, ind: 15, power_plant: 500, water_pump: 400, drain: 300, park: 50, bulldoze: 5 };
+
+                if (this.activeTool === 'road' && t.type !== 'road' && t.type !== 'water' && this.funds >= 20) {
+                    t.type = 'road'; t.zone = null; t.level = 0; t.hasTree = false; this.funds -= 20;
+                } else if (this.activeTool === 'lake' && t.type === 'grass' && this.funds >= 100) {
+                    t.type = 'water'; t.zone = null; t.level = 0; t.hasTree = false; this.funds -= 100;
+                } else if (this.activeTool === 'power_plant' && t.type === 'grass' && this.funds >= 500) {
+                    t.type = 'power_plant'; t.zone = null; t.level = 0; t.hasTree = false; this.funds -= 500;
+                } else if (this.activeTool === 'park' && t.type === 'grass' && this.funds >= 50) {
+                    t.type = 'park'; t.zone = null; t.level = 0; t.hasTree = false; this.funds -= 50;
+                } else if (this.activeTool === 'drain' && t.type === 'grass' && this.funds >= 300) {
+                    t.type = 'drain'; t.zone = null; t.level = 0; t.hasTree = false; this.funds -= 300;
+                } else if (this.activeTool === 'water_pump' && (t.type === 'grass' || t.type === 'water') && this.funds >= 400) {
+                    t.type = 'water_pump'; t.zone = null; t.level = 0; t.hasTree = false; this.funds -= 400;
+                } else if (['res', 'com', 'ind'].includes(this.activeTool)) {
+                    if (t.type === 'grass' && t.zone !== this.activeTool && this.funds >= costs[this.activeTool]) {
+                        t.zone = this.activeTool; t.hasTree = false; this.funds -= costs[this.activeTool];
+                    }
+                } else if (this.activeTool === 'bulldoze' && (t.type !== 'grass' || t.zone || t.hasTree)) {
+                    if (this.funds >= 5) {
+                        t.type = 'grass'; t.zone = null; t.level = 0; t.hasTree = false; this.funds -= 5;
+                    }
+                }
+                this.updateUI();
+            }
+        }
+
+        startSimulation() {
+            setInterval(() => this.tick(), 1000);
+        }
+
+        tick() {
+            if (this.isPaused) return;
+
+            // Construction logic
+            this.grid.forEach(row => row.forEach(t => {
+                if (t.zone && t.level < 3) {
+                    t.constructionProgress = (t.constructionProgress || 0) + 1;
+                    if (t.constructionProgress >= 60) { // 60 seconds per stage
+                        t.constructionProgress = 0;
+                        t.level++;
+                        this.playSound('build');
+                    }
+                }
+            }));
+            
+            for (let s = 0; s < (this.speed || 1); s++) {
+                this.updateSimulation();
+            }
+            this.updateUI();
+        }
+
+        updateSimulation() {
+            this.date.month++;
+            if (this.date.month >= 12) { this.date.month = 0; this.date.year++; }
+
+            this.calculatePower();
+            this.calculateWater();
+            this.updatePollution();
+            this.updateAgents();
+
+            let pop = 0, jobs = 0, roads = 0, parks = 0;
+            this.grid.forEach((row, y) => row.forEach((t, x) => {
+                if (t.type === 'road') roads++;
+                if (t.type === 'park') parks++;
+                if (t.zone) {
+                    const nearRoad = this.isNearRoad(x, y);
+                    const isSupplied = t.powered && (t.zone === 'ind' || t.watered);
+                    if (nearRoad && isSupplied && t.level < 4 && Math.random() < 0.05 && this.demand[t.zone[0]] > 20) {
+                        t.level++; t.growth = 0;
+                        this.demand[t.zone[0]] -= 4;
+                        // Spawn person
+                        if (Math.random() < 0.3) this.spawnAgent('person', x, y);
+                    }
+                    if (t.zone === 'res') pop += t.level * 15;
+                    else jobs += t.level * 10;
+                }
+            }));
+            
+            // Randomly spawn cars
+            if (pop > 100 && Math.random() < 0.1) {
+                const rx = Math.floor(Math.random()*CONFIG.GRID_SIZE);
+                const ry = Math.floor(Math.random()*CONFIG.GRID_SIZE);
+                if (this.grid[ry][rx].type === 'road') this.spawnAgent('car', rx, ry);
+            }
+
+            this.population = pop;
+            this.demand.r = Math.min(100, Math.max(0, 50 + (jobs - pop/2)));
+            this.demand.c = Math.min(100, Math.max(0, 30 + (pop/4 - jobs/10)));
+            this.demand.i = Math.min(100, Math.max(0, 40 + (pop - jobs)));
+            
+            // Happiness Calculation
+            const parkBonus = (parks / (pop + 1)) * 500;
+            const supplyPenalty = this.grid.reduce((acc, row) => acc + row.filter(t => t.zone && (!t.powered || (!t.watered && t.zone !== 'ind'))).length, 0);
+            
+            let pollutionPenalty = 0;
+            this.grid.forEach(row => row.forEach(t => {
+                if (t.zone === 'res' && t.pollution > 10) pollutionPenalty += t.pollution * 0.1;
+            }));
+
+            this.happiness = Math.min(100, Math.max(0, 80 + parkBonus - (supplyPenalty * 2) - (pollutionPenalty / (pop + 1))));
+
+            // Achievement Checks
+            if (!this.achievements.pop100 && pop >= 100) {
+                this.achievements.pop100 = true;
+                this.showToast('Маленькая деревня', 'Население достигло 100 человек!', '🏘️');
+            }
+            if (!this.achievements.pop1000 && pop >= 1000) {
+                this.achievements.pop1000 = true;
+                this.showToast('Растущий город', 'В вашем городе уже 1,000 жителей!', '🏢');
+            }
+            if (!this.achievements.happy90 && this.happiness >= 90 && pop > 50) {
+                this.achievements.happy90 = true;
+                this.showToast('Рай на земле', 'Счастье горожан превысило 90%!', '✨');
+            }
+            if (!this.achievements.pollutionHigh && pollutionPenalty > 100) {
+                this.achievements.pollutionHigh = true;
+                this.showToast('Экологическая тревога', 'Высокое загрязнение снижает счастье!', '⚠️');
+            }
+
+            const taxIncome = pop * 0.2 + jobs * 0.4;
+            const maintenance = roads * 0.5 + parks * 2;
+            this.funds += Math.floor(taxIncome - maintenance);
+            this.lastEconomy = { tax: taxIncome, maint: maintenance };
+
+            // Particles update
+            this.particles = this.particles.filter(p => {
+                p.y -= 0.5;
+                p.l -= 0.01;
+                p.r += 0.1;
+                return p.l > 0;
+            });
+        }
+
+        isNearRoad(x, y) {
+            const ds = [[0,1],[0,-1],[1,0],[-1,0]];
+            return ds.some(([dx, dy]) => {
+                const nx = x+dx, ny = y+dy;
+                return nx >= 0 && nx < CONFIG.GRID_SIZE && ny >= 0 && ny < CONFIG.GRID_SIZE && this.grid[ny][nx].type === 'road';
+            });
+        }
+
+        calculatePower() {
+            this.grid.forEach(row => row.forEach(t => t.powered = false));
+            const queue = [];
+            
+            // Find Power Plants
+            this.grid.forEach((row, y) => row.forEach((t, x) => {
+                if (t.type === 'power_plant') {
+                    t.powered = true;
+                    queue.push({x, y});
+                }
+            }));
+
+            // BFS Spread
+            while (queue.length > 0) {
+                const {x, y} = queue.shift();
+                const neighbors = [[0,1],[0,-1],[1,0],[-1,0]];
+                
+                neighbors.forEach(([dx, dy]) => {
+                    const nx = x + dx, ny = y + dy;
+                    if (nx >= 0 && nx < CONFIG.GRID_SIZE && ny >= 0 && ny < CONFIG.GRID_SIZE) {
+                        const nt = this.grid[ny][nx];
+                        if (!nt.powered && (nt.type === 'power_line' || nt.zone || nt.type === 'road' || nt.type === 'power_plant')) {
+                            nt.powered = true;
+                            queue.push({x: nx, y: ny});
+                        }
+                    }
+                });
+            }
+        }
+
+        calculateWater() {
+            this.grid.forEach(row => row.forEach(t => t.watered = false));
+            const queue = [];
+            
+            // Find Water Pumps (must be near water)
+            this.grid.forEach((row, y) => row.forEach((t, x) => {
+                if (t.type === 'water_pump') {
+                    // Pump works if it is on water or adjacent to water
+                    const isNearWater = t.type === 'water' || this.isNextToWater(x, y);
+                    if (isNearWater) {
+                        t.watered = true;
+                        queue.push({x, y});
+                    }
+                }
+            }));
+
+            // BFS Spread
+            while (queue.length > 0) {
+                const {x, y} = queue.shift();
+                const neighbors = [[0,1],[0,-1],[1,0],[-1,0]];
+                
+                neighbors.forEach(([dx, dy]) => {
+                    const nx = x + dx, ny = y + dy;
+                    if (nx >= 0 && nx < CONFIG.GRID_SIZE && ny >= 0 && ny < CONFIG.GRID_SIZE) {
+                        const nt = this.grid[ny][nx];
+                        // Water now follows roads and zones directly connected
+                        if (!nt.watered && (nt.type === 'road' || nt.zone || nt.type === 'water_pump' || nt.type === 'drain' || nt.type === 'park')) {
+                            nt.watered = true;
+                            queue.push({x: nx, y: ny});
+                        }
+                    }
+                });
+            }
+        }
+
+        isNextToWater(x, y) {
+            const ds = [[0,1],[0,-1],[1,0],[-1,0]];
+            return ds.some(([dx, dy]) => {
+                const nx = x+dx, ny = y+dy;
+                return nx >= 0 && nx < CONFIG.GRID_SIZE && ny >= 0 && ny < CONFIG.GRID_SIZE && this.grid[ny][nx].type === 'water';
+            });
+        }
+
+        updatePollution() {
+            for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
+                for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
+                    const t = this.grid[y][x];
+                    
+                    // 1. Production
+                    if (t.zone === 'ind' && t.level > 0) {
+                        this.spreadPollution(x, y, t.level * 2, 4);
+                    }
+                    if (t.type === 'power_plant') {
+                        this.spreadPollution(x, y, 10, 6);
+                    }
+
+                    // 2. Cleaning
+                    if (t.type === 'waste') {
+                        this.clearPollution(x, y, 20, 8);
+                    }
+
+                    // 3. Natural Dissipation
+                    t.pollution = Math.max(0, t.pollution * 0.95 - 0.1);
+                }
+            }
+        }
+
+        spreadPollution(x, y, amount, radius) {
+            for (let dy = -radius; dy <= radius; dy++) {
+                for (let dx = -radius; dx <= radius; dx++) {
+                    const nx = x + dx, ny = y + dy;
+                    if (nx >= 0 && nx < CONFIG.GRID_SIZE && ny >= 0 && ny < CONFIG.GRID_SIZE) {
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        if (dist <= radius) {
+                            this.grid[ny][nx].pollution += (amount * (1 - dist / radius));
+                        }
+                    }
+                }
+            }
+        }
+
+        clearPollution(x, y, amount, radius) {
+            for (let dy = -radius; dy <= radius; dy++) {
+                for (let dx = -radius; dx <= radius; dx++) {
+                    const nx = x + dx, ny = y + dy;
+                    if (nx >= 0 && nx < CONFIG.GRID_SIZE && ny >= 0 && ny < CONFIG.GRID_SIZE) {
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        if (dist <= radius) {
+                            this.grid[ny][nx].pollution = Math.max(0, this.grid[ny][nx].pollution - (amount * (1 - dist / radius)));
+                        }
+                    }
+                }
+            }
+        }
+
+        spawnAgent(type, gx, gy) {
+            this.agents.push({
+                type,
+                x: (gx + 0.5) * CONFIG.TILE_SIZE,
+                y: (gy + 0.5) * CONFIG.TILE_SIZE,
+                vx: 0, vy: 0,
+                color: type === 'car' ? CONFIG.COLORS.CAR[Math.floor(Math.random()*CONFIG.COLORS.CAR.length)] : '#fff',
+                life: 500 + Math.random() * 500
+            });
+            if (this.agents.length > 200) this.agents.shift();
+        }
+
+        updateAgents() {
+            this.agents.forEach(a => {
+                const gx = Math.floor(a.x / CONFIG.TILE_SIZE);
+                const gy = Math.floor(a.y / CONFIG.TILE_SIZE);
+                
+                if (a.type === 'car') {
+                    // Simple road following
+                    const possible = [];
+                    [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dx, dy]) => {
+                        const nx = gx+dx, ny = gy+dy;
+                        if (nx>=0 && nx<CONFIG.GRID_SIZE && ny>=0 && ny<CONFIG.GRID_SIZE && this.grid[ny][nx].type === 'road') {
+                            possible.push({dx, dy});
+                        }
+                    });
+                    if (possible.length > 0 && (Math.random() < 0.05 || (a.vx === 0 && a.vy === 0))) {
+                        const d = possible[Math.floor(Math.random()*possible.length)];
+                        a.vx = d.dx * 4; a.vy = d.dy * 4;
+                    }
+                } else {
+                    // People wander
+                    if (Math.random() < 0.1) {
+                        a.vx = (Math.random() - 0.5) * 2;
+                        a.vy = (Math.random() - 0.5) * 2;
+                    }
+                }
+                a.x += a.vx; a.y += a.vy;
+                a.life--;
+            });
+            this.agents = this.agents.filter(a => a.life > 0);
+        }
+
+        updateUI() {
+            document.getElementById('money-display').innerText = `$${Math.floor(this.funds).toLocaleString()}`;
+            document.getElementById('pop-display').innerText = this.population.toLocaleString();
+            document.getElementById('happiness-display').innerText = `${Math.floor(this.happiness)}%`;
+            document.getElementById('game-date').innerText = `${['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'][this.date.month]} ${this.date.year}`;
+            
+            document.getElementById('r-demand').style.height = this.demand.r + '%';
+            document.getElementById('c-demand').style.height = this.demand.c + '%';
+            document.getElementById('i-demand').style.height = this.demand.i + '%';
+
+            if (this.showInfo) {
+                let bldgs = 0; this.grid.forEach(r=>r.forEach(t=>{if(t.level>0)bldgs++}));
+                document.getElementById('total-buildings').innerText = bldgs;
+                document.getElementById('pollution-status').innerText = (this.happiness < 50 ? 'Высокое' : 'Низкое');
+                document.getElementById('tax-income').innerText = `+$${Math.floor(this.lastEconomy.tax)}`;
+                document.getElementById('maintenance-costs').innerText = `-$${Math.floor(this.lastEconomy.maint)}`;
+                
+                const pwr = this.grid.some(r=>r.some(t=>t.type==='power_plant'));
+                document.getElementById('power-status').innerText = pwr ? 'Норма' : 'Нет питания';
+                const wtr = this.grid.some(r=>r.some(t=>t.type==='water_pump'));
+                document.getElementById('water-status').innerText = wtr ? 'Норма' : 'Нет воды';
+            }
+        }
+
+
+        loop() {
+            this.draw();
+            requestAnimationFrame(() => this.loop());
+        }
+
+        draw() {
+            this.ctx.fillStyle = '#020617';
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+            this.ctx.save();
+            this.ctx.translate(this.camera.x, this.camera.y);
+            this.ctx.scale(this.camera.zoom, this.camera.zoom);
+
+            for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
+                for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
+                    this.drawTile(x, y);
+                }
+            }
+
+            this.drawParticles();
+            this.drawAgents();
+
+            this.ctx.restore();
+        }
+
+        drawTile(x, y) {
+            const t = this.grid[y][x];
+            const px = x * CONFIG.TILE_SIZE;
+            const py = y * CONFIG.TILE_SIZE;
+            const s = CONFIG.TILE_SIZE;
+
+            // 1. Terrain / Base
+            if (t.type === 'water') {
+                if (!this.drawFromAtlas('water', px, py, s)) {
+                    this.ctx.fillStyle = CONFIG.COLORS.WATER;
+                    this.ctx.fillRect(px, py, s, s);
+                }
+                // Subtle waves
+                this.ctx.fillStyle = 'rgba(255,255,255,0.05)';
+                this.ctx.fillRect(px + Math.sin(Date.now()*0.001 + x)*2, py + Math.cos(Date.now()*0.001 + y)*2, s, 2);
+
+                // Data Overlays for Water
+                if (this.currentView === 'power' && t.powered) {
+                    this.ctx.fillStyle = 'rgba(251, 191, 36, 0.4)';
+                    this.ctx.fillRect(px, py, s, s);
+                } else if (this.currentView === 'water' && t.watered) {
+                    this.ctx.fillStyle = 'rgba(59, 130, 246, 0.4)';
+                    this.ctx.fillRect(px, py, s, s);
+                }
+            } else {
+                if (!this.drawFromAtlas('grass', px, py, s)) {
+                    const g = this.ctx.createRadialGradient(px+s/2, py+s/2, 0, px+s/2, py+s/2, s);
+                    g.addColorStop(0, CONFIG.COLORS.GRASS);
+                    g.addColorStop(1, CONFIG.COLORS.GRASS_LIGHT);
+                    this.ctx.fillStyle = g;
+                    this.ctx.fillRect(px, py, s, s);
+                }
+
+                // Data Overlays
+                if (this.currentView === 'power' && t.powered) {
+                    this.ctx.fillStyle = 'rgba(251, 191, 36, 0.4)';
+                    this.ctx.fillRect(px, py, s, s);
+                } else if (this.currentView === 'water' && t.watered) {
+                    this.ctx.fillStyle = 'rgba(59, 130, 246, 0.4)';
+                    this.ctx.fillRect(px, py, s, s);
+                } else if (this.currentView === 'pollution' && t.pollution > 0) {
+                    this.ctx.fillStyle = `rgba(120, 113, 108, ${Math.min(0.8, t.pollution / 100)})`;
+                    this.ctx.fillRect(px, py, s, s);
+                }
+
+                // Tree Decoration
+                if (t.hasTree) {
+                    if (!this.drawFromAtlas('tree', px, py, s)) {
+                        this.ctx.fillStyle = '#064e3b';
+                        this.ctx.beginPath();
+                        this.ctx.arc(px + s/2, py + s/2, 4, 0, Math.PI*2);
+                        this.ctx.fill();
+                        this.ctx.fillStyle = '#065f46';
+                        this.ctx.beginPath();
+                        this.ctx.arc(px + s/2, py + s/2 - 2, 3, 0, Math.PI*2);
+                        this.ctx.fill();
+                    }
+                }
+            }
+
+            // 2. Road with Intersections
+            if (t.type === 'road') {
+                if (!this.drawFromAtlas('road', px, py, s)) {
+                    this.ctx.fillStyle = CONFIG.COLORS.ROAD;
+                    this.ctx.fillRect(px, py, s, s);
+                }
+                
+                this.ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+                this.ctx.strokeRect(px+1, py+1, s-2, s-2);
+
+                // Road Lines
+                this.ctx.fillStyle = CONFIG.COLORS.ROAD_LINE;
+                const n = this.getRoadNeighbors(x, y);
+                if (n.u || n.d) this.ctx.fillRect(px + s/2 - 1, py, 2, s);
+                if (n.l || n.r) this.ctx.fillRect(px, py + s/2 - 1, s, 2);
+                if (!n.u && !n.d && !n.l && !n.r) {
+                     this.ctx.fillRect(px + s/2 - 1, py + 4, 2, s-8);
+                }
+            }
+
+            // Power Line
+            if (t.type === 'power_line') {
+                this.ctx.strokeStyle = '#fbbf24';
+                this.ctx.lineWidth = 2;
+                this.ctx.beginPath();
+                this.ctx.moveTo(px + s/2, py + s/2);
+                const n = this.getPowerNeighbors(x, y);
+                if (n.u) { this.ctx.moveTo(px+s/2, py); this.ctx.lineTo(px+s/2, py+s); }
+                if (n.l) { this.ctx.moveTo(px, py+s/2); this.ctx.lineTo(px+s, py+s/2); }
+                if (!n.u && !n.d && !n.l && !n.r) {
+                    this.ctx.arc(px+s/2, py+s/2, 4, 0, Math.PI*2);
+                }
+                this.ctx.stroke();
+            }
+
+            // Power Plant
+            if (t.type === 'power_plant') {
+                if (!this.drawFromAtlas('power', px, py, s)) {
+                    this.ctx.fillStyle = '#475569';
+                    this.ctx.fillRect(px+4, py+4, s-8, s-8);
+                    this.ctx.fillStyle = '#fbbf24';
+                    this.ctx.fillRect(px+s/2-4, py+s/2-4, 8, 8);
+                }
+                // Smoke
+                if (Math.random() < 0.1) this.particles.push({x: px+s/2, y: py+4, r: 2, l: 1, c: 'rgba(200,200,200,0.5)'});
+            }
+
+            // Park
+            if (t.type === 'park') {
+                if (!this.drawFromAtlas('park', px, py, s)) {
+                    this.ctx.fillStyle = '#4ade80';
+                    this.ctx.beginPath();
+                    this.ctx.roundRect(px+2, py+2, s-4, s-4, 8);
+                    this.ctx.fill();
+                    // Bench
+                    this.ctx.fillStyle = '#92400e';
+                    this.ctx.fillRect(px+s/2-4, py+s/2-2, 8, 4);
+                }
+            }
+
+            // Waste Management
+            if (t.type === 'waste') {
+                if (!this.drawFromAtlas('waste', px, py, s)) {
+                    this.ctx.fillStyle = '#581c87';
+                    this.ctx.fillRect(px+4, py+4, s-8, s-8);
+                    this.ctx.fillStyle = '#a855f7';
+                    this.ctx.fillRect(px+s/2-6, py+s/2-6, 12, 12);
+                    this.ctx.strokeStyle = '#d8b4fe';
+                    this.ctx.strokeRect(px+s/2-6, py+s/2-6, 12, 12);
+                }
+            }
+
+            // Water Pump
+            if (t.type === 'water_pump') {
+                if (!this.drawFromAtlas('pump', px, py, s)) {
+                    this.ctx.fillStyle = '#1e3a8a';
+                    this.ctx.fillRect(px+4, py+4, s-8, s-8);
+                    this.ctx.fillStyle = '#3b82f6';
+                    this.ctx.beginPath();
+                    this.ctx.arc(px+s/2, py+s/2, 6, 0, Math.PI*2);
+                    this.ctx.fill();
+                }
+            }
+
+            // Drain
+            if (t.type === 'drain') {
+                if (!this.drawFromAtlas('drain', px, py, s)) {
+                    this.ctx.fillStyle = '#1e293b';
+                    this.ctx.beginPath();
+                    this.ctx.arc(px+s/2, py+s/2, s/2-4, 0, Math.PI*2);
+                    this.ctx.fill();
+                    this.ctx.strokeStyle = '#3b82f6';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.beginPath();
+                    this.ctx.arc(px+s/2, py+s/2, s/4, 0, Math.PI*2);
+                    this.ctx.stroke();
+                }
+            }
+
+            // 4. Buildings (with construction stages)
+            if (t.zone) {
+                // Determine stage: foundation (1), basic (2), advanced (3)
+                const stage = Math.min(t.level + 1, 3);
+                const texKey = t.zone + '_' + stage;
+                
+                // Background: Grass
+                this.ctx.fillStyle = CONFIG.COLORS.GRASS;
+                this.ctx.fillRect(px, py, s, s);
+
+                if (!this.drawFromAtlas(texKey, px, py, s)) {
+                    // Fallback to old procedural drawing if texture is missing
+                    const bCol = { res: CONFIG.COLORS.RES, com: CONFIG.COLORS.COM, ind: CONFIG.COLORS.IND };
+                    const h = (t.level + 1) * 12;
+                    const p = 6;
+                    const bs = s - p*2;
+
+                    // Shadow
+                    this.ctx.fillStyle = 'rgba(0,0,0,0.4)';
+                    this.ctx.fillRect(px+p+4, py+p+4, bs, bs);
+
+                    // Building body
+                    const bodyCol = bCol[t.zone];
+                    this.ctx.fillStyle = this.shadeColor(bodyCol, -25);
+                    this.ctx.fillRect(px+p, py+p-h, bs, bs+h);
+
+                    // Facade Details
+                    this.ctx.fillStyle = this.shadeColor(bodyCol, -10);
+                    this.ctx.fillRect(px+p, py+p-h, bs, 4); // Top lip
+                }
+            }
+
+            // 5. Pollution Overlay
+            if (t.pollution > 5) {
+                this.ctx.fillStyle = `rgba(120, 113, 108, ${Math.min(0.6, t.pollution / 100)})`;
+                this.ctx.fillRect(px, py, s, s);
+            }
+
+            // 6. Warnings
+            if (t.zone && this.camera.zoom > 0.4) {
+                if (!t.powered) {
+                    this.ctx.fillStyle = '#ef4444';
+                    this.ctx.font = 'bold 12px sans-serif';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText('⚡', px + s/2 - 6, py + s/2);
+                }
+                if (!t.watered && (t.zone === 'res' || t.zone === 'com')) {
+                    this.ctx.fillStyle = '#3b82f6';
+                    this.ctx.font = 'bold 12px sans-serif';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText('💧', px + s/2 + 6, py + s/2);
+                }
+            }
+        }
+
+        getRoadNeighbors(x, y) {
+            const isR = (nx, ny) => nx >= 0 && nx < CONFIG.GRID_SIZE && ny >= 0 && ny < CONFIG.GRID_SIZE && this.grid[ny][nx].type === 'road';
+            return { u: isR(x, y-1), d: isR(x, y+1), l: isR(x-1, y), r: isR(x+1, y) };
+        }
+
+        getPowerNeighbors(x, y) {
+            const isP = (nx, ny) => nx >= 0 && nx < CONFIG.GRID_SIZE && ny >= 0 && ny < CONFIG.GRID_SIZE && (this.grid[ny][nx].type === 'power_line' || this.grid[ny][nx].type === 'power_plant');
+            return { u: isP(x, y-1), d: isP(x, y+1), l: isP(x-1, y), r: isP(x+1, y) };
+        }
+
+        getWaterNeighbors(x, y) {
+            const isW = (nx, ny) => nx >= 0 && nx < CONFIG.GRID_SIZE && ny >= 0 && ny < CONFIG.GRID_SIZE && (this.grid[ny][nx].type === 'water_pipe' || this.grid[ny][nx].type === 'water_pump');
+            return { u: isW(x, y-1), d: isW(x, y+1), l: isW(x-1, y), r: isW(x+1, y) };
+        }
+
+        drawParticles() {
+            this.particles.forEach(p => {
+                this.ctx.fillStyle = p.c;
+                this.ctx.beginPath();
+                this.ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+                this.ctx.fill();
+            });
+        }
+
+        drawAgents() {
+            this.agents.forEach(a => {
+                this.ctx.fillStyle = a.color;
+                if (a.type === 'car') {
+                    this.ctx.fillRect(a.x-6, a.y-4, 12, 8);
+                } else {
+                    this.ctx.beginPath();
+                    this.ctx.arc(a.x, a.y, 2, 0, Math.PI*2);
+                    this.ctx.fill();
+                }
+            });
+        }
+
+        shadeColor(color, percent) {
+            let num = parseInt(color.replace("#",""),16), amt = Math.round(2.55 * percent), R = (num >> 16) + amt, G = (num >> 8 & 0x00FF) + amt, B = (num & 0x0000FF) + amt;
+            return "#" + (0x1000000 + (R<255?R<0?0:R:255)*0x10000 + (G<255?G<0?0:G:255)*0x100 + (B<255?B<0?0:B:255)).toString(16).slice(1);
+        }
+    }
+
+    const game = new CityGame();
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "name": "City Skylines 2D",
+  "description": "An interactive 2D city builder simulation game featuring grid zoning, RCI demand, power & traffic simulation, agents (cars and people), lake and drain systems, and improved 2D aesthetics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
