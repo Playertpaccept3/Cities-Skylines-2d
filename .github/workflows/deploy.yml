@@ -1,8 +1,8 @@
-name: Deploy Vite app to Pages
+name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main"]
+    branches: [ main, master ]
   workflow_dispatch:
 
 permissions:
@@ -11,8 +11,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: 'pages'
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -24,28 +24,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 1. Установка Bun
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: 20
+          cache: 'npm'
 
-      # 2. Установка зависимостей и сборка через Bun
-      - name: Install dependencies & Build
-        run: |
-          bun install --frozen-lockfile
-          bun run build
+      - name: Install dependencies
+        run: npm ci || npm install
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
+      - name: Build project
+        run: npm run build
 
-      # 3. Загрузка собранных файлов из dist
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: './dist'
 
-      # 4. Публикация на GitHub Pages
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
